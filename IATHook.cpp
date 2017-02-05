@@ -1,0 +1,203 @@
+#include <stdlib.h>
+#include <iostream>
+#include <unordered_map>
+#include <windows.h>
+#include <string>
+#include <sstream>
+#include <exception>
+
+#define IATHOOK_LIBRARY
+
+#include "IATHook.h"
+#include "IATUtils.h"
+
+std::unordered_map<DWORDPTR, IATHook> IATHook::hooksMap;
+std::unordered_map<std::string, IATHook*> IATHook::hooksNamedMap;
+
+using namespace std;
+
+/// <summary>
+/// Patches the IAT from the provided hook
+/// throws std::system_error, std::invalid_argument
+/// </summary>
+/// <param name="hook">The hook.</param>
+void HookIATPatch(HookIAT* hook)
+{
+    if(hook->originalFunction != NULL && hook->hookFunction != NULL && (*(hook->originalFunction)) != NULL) {
+        DWORD oldProt;
+        if(VirtualProtect(hook->originalFunction, sizeof(LPDWORD), PAGE_EXECUTE_READWRITE, &oldProt)) {
+            memcpy(hook->originalFunction, &hook->hookFunction, sizeof(PVOID));
+            VirtualProtect(hook->originalFunction, sizeof(LPDWORD), oldProt, NULL);
+        } else {
+			std::stringstream ss;
+			ss << "Unable to patch/unpatch IAT : unable to unprotect memory at " << (hook->originalFunction) << " to PAGE_EXECUTE_READWRITE" << std::endl;
+			throw std::system_error(GetLastError(), std::system_category(), ss.str().c_str());
+        }
+    } else {
+		throw std::invalid_argument("Unable to patch/unpatch IAT : invalid argument provided containing null value(s)");
+    }
+}
+
+/// <summary>
+/// Unpatches the IAT from the provided hook
+/// </summary>
+/// <param name="hook">The hook.</param>
+void HookIATUnpatch(HookIAT* hook)
+{
+    //le but est de restaurer l'IAT
+    void* lastHook = hook->hookFunction;
+
+    hook->hookFunction = hook->originalFunction;
+    HookIATPatch(hook);
+    hook->hookFunction = lastHook;
+}
+
+/// <summary>
+/// Creates an IAT Hook instance
+/// </summary>
+/// <param name="hModProcess">The process handle module.</param>
+/// <param name="moduleName">Name of the module where the function to hook is.</param>
+/// <param name="funcName">Name of the function to hook.</param>
+/// <param name="hookFunc">The hook function.</param>
+/// <returns>The HookIAT instance</returns>
+HookIAT HookIATCreate(HMODULE hModProcess, const char* moduleName, const char* funcName, void* hookFunc) {
+    HookIAT result;
+    result.originalFunction = IATGetFirstImport(hModProcess, moduleName, funcName);
+    result.hookFunction = hookFunc;
+
+    if(result.originalFunction != NULL) {
+        result.originalFunctionCaller = *result.originalFunction;
+	} else {
+		result.originalFunctionCaller = NULL;
+	}
+
+    if(strlen(funcName) < 255) {
+        strcpy(result.name, funcName);
+        result.name[255] = '\0';
+    }
+    return result;
+}
+
+
+/// <summary>
+/// Initializes a new instance of the <see cref="IATHook"/> class.
+/// </summary>
+IATHook::IATHook() {
+
+}
+
+/// <summary>
+/// Initializes a new instance of the <see cref="IATHook"/> class.
+/// </summary>
+/// <param name="hModProcess">The process handle module.</param>
+/// <param name="moduleName">Name of the module where the function to hook is.</param>
+/// <param name="funcName">Name of the function to hook.</param>
+/// <param name="indicativeModuleName">Human readable name of the module</param>
+/// <param name="hookFunc">The hook function.</param>
+IATHook::IATHook(HMODULE hModProcess, const std::string& moduleName, const std::string& funcName, const std::string& indicativeModuleName, void* hookFunc) {
+	
+    wrapped = HookIATCreate(hModProcess, moduleName.empty() ? NULL : moduleName.c_str(), funcName.c_str(), hookFunc);
+    m_funcName = funcName;
+    m_moduleName = moduleName;
+	m_indicativeModuleName = indicativeModuleName;
+	m_keyAddress = NULL;
+}
+
+/// <summary>
+/// Initializes a new instance of the <see cref="IATHook"/> class.
+/// </summary>
+/// <param name="h">The h.</param>
+IATHook::IATHook(const IATHook& h) {
+	wrapped = h.wrapped;
+	m_funcName = h.m_funcName;
+	m_moduleName = h.m_moduleName;
+	m_indicativeModuleName = h.m_indicativeModuleName;
+	m_keyAddress = h.m_keyAddress;
+}
+
+/// <summary>
+/// Patches the hook from a function at the specified key address.
+/// </summary>
+/// <param name="keyAddress">The key address.</param>
+void IATHook::patch(PVOID keyAddress) {
+	m_keyAddress = keyAddress;
+	DWORDPTR key = (DWORDPTR)keyAddress;
+	hooksMap[key] = *this;
+	hooksNamedMap[m_funcName] = &hooksMap[key];
+	HookIATPatch(&hooksMap[key].wrapped);
+}
+
+/// <summary>
+/// Gets the hook from address stored into the internal Hook address map.
+/// </summary>
+/// <param name="keyAddress">The key address.</param>
+/// <returns>A pointer to the IATHook stored</returns>
+IATHook* IATHook::getHookFromAddress(PVOID keyAddress) {
+	DWORDPTR key = (DWORDPTR)keyAddress;
+    if(hooksMap.find(key) != hooksMap.end()) {
+        return &hooksMap[key];
+    }
+
+    return NULL;
+}
+
+/// <summary>
+/// Gets the hook from name stored into the internal Hook name map.
+/// </summary>
+/// <param name="hookName">Name of the hook.</param>
+/// <returns>A pointer to the IATHook stored</returns>
+IATHook* IATHook::getHookFromName(const std::string& hookName) {
+	if (hooksNamedMap.find(hookName) != hooksNamedMap.end()) {
+		return hooksNamedMap[hookName];
+	}
+	return NULL;
+}
+
+/// <summary>
+/// Gets the original (unhooked) function.
+/// </summary>
+/// <returns>The address of the function</returns>
+PVOID IATHook::getOriginalFunction() {
+	return wrapped.originalFunctionCaller;
+}
+
+/// <summary>
+/// Gets the name of the function.
+/// </summary>
+/// <returns>The name of the function</returns>
+std::string& IATHook::getFunctionName() {
+	return m_funcName;
+}
+
+/// <summary>
+/// Gets the name of the module.
+/// </summary>
+/// <returns>The name of the module</returns>
+std::string& IATHook::getModuleName() {
+	return m_moduleName;
+}
+
+/// <summary>
+/// Gets the indicative (human readable) name of the module.
+/// </summary>
+/// <returns>The indicative (human readable) name of the module.</returns>
+std::string& IATHook::getIndicativeModuleName() {
+	return m_indicativeModuleName;
+}
+
+/// <summary>
+/// Unpatches this hook
+/// </summary>
+void IATHook::unpatch() {
+	auto& it = hooksMap.find((DWORDPTR)m_keyAddress);
+	auto& itName = hooksNamedMap.find(m_funcName);
+	HookIATUnpatch(&it->second.wrapped);
+	hooksMap.erase(it);
+	hooksNamedMap.erase(itName);
+}
+
+/// <summary>
+/// Finalizes an instance of the <see cref="IATHook"/> class.
+/// </summary>
+IATHook::~IATHook() {
+}
