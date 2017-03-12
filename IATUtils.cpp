@@ -16,7 +16,6 @@
 #define ORDINAL_TEXT_DUMP "ordinal"
 
 #include "IATUtils.h"
-#include "ASMUtils.h"
 #include "IATHook.h"
 
 
@@ -77,10 +76,8 @@ bool StringStartsWith(const std::string& s, const std::string& prefix) {
 /// <returns></returns>
 int AccessViolationHandler(unsigned int code, struct _EXCEPTION_POINTERS *ep) {
 
-	printf("Exception detected, code 0x%p\n", code);
-
+	std::cout << "Exception detected, code 0x" << std::hex << code << std::endl;
 	if (code == EXCEPTION_ACCESS_VIOLATION) {
-
 		return EXCEPTION_EXECUTE_HANDLER;
 	}
 
@@ -111,10 +108,10 @@ int CheckModuleOK(const std::string& moduleFullName, const std::string& modulePa
 		sys32Dir = StringToLower(pPath);
 	}
 
-	std::string& moduleName = GetShortName(moduleFullName.c_str());
+	auto moduleName = GetShortName(moduleFullName.c_str());
 
 	if (modulePattern == "ALL_BUT_SYSTEM") {
-		std::string& pathModuleVar = StringToLower(moduleFullName.substr(0, moduleFullName.length() - moduleName.length() + 1));
+		auto pathModuleVar = StringToLower(moduleFullName.substr(0, moduleFullName.length() - moduleName.length() + 1));
 		if (!StringStartsWith(pathModuleVar, sys32Dir)) {
 			*result = true;
 		}
@@ -127,9 +124,9 @@ int CheckModuleOK(const std::string& moduleFullName, const std::string& modulePa
 	bool joker = false;
 	
 	
-	std::vector<std::string>& moduleList = split(modulePattern, MODULE_SEPARATOR_CARD);
+	auto moduleList = split(modulePattern, MODULE_SEPARATOR_CARD);
 
-	for (auto& currentPatternIt = moduleList.begin(); currentPatternIt != moduleList.end(); currentPatternIt++) {
+	for (auto currentPatternIt = moduleList.begin(); currentPatternIt != moduleList.end(); currentPatternIt++) {
 		std::string& currentPattern = *currentPatternIt;
 		if (currentPattern == MODULE_JOKER_CARD) {
 			joker = true;
@@ -148,7 +145,7 @@ int CheckModuleOK(const std::string& moduleFullName, const std::string& modulePa
 		ok = false;
 	}
 
-	*result = (ok || !negative && joker);
+	*result = (ok || (!negative && joker));
 	return MODULE_ALL;
 }
 
@@ -376,14 +373,16 @@ bool IATPatch(HMODULE hModule, const std::string& szDll, const std::string& func
 	DWORDPTR szFunction;
 	ordinalFunction = CheckOrdinalFunction(funcName, &szFunction);
 
-	if (pTable == NULL)
-	{
-		char error[512] = { '\0' };
-		sprintf_s(error, 512, "Unable to read current module at %p");
-		throw std::range_error(error);
+	if (pTable == NULL) {
+		std::stringstream ss;
+		ss << "Unable to read current module at " << std::hex << hModule;
+		throw std::range_error(ss.str());
 	}
 
+
+#ifdef _MSC_VER
 	__try {
+#endif
 		while (pTable->Characteristics != 0 
 				&& (szDllName = IATGetImportTableName(hModule, pTable)) != NULL 
 				&& !IsBadReadPtr(szDllName, sizeof(const char*)) 
@@ -406,7 +405,7 @@ bool IATPatch(HMODULE hModule, const std::string& szDll, const std::string& func
 							}							
 						} else if (!ordinalFunction) {
 							IMAGE_IMPORT_BY_NAME* pImport = IATGetImportName(hModule, pThunkOriData);
-							PVOID func_addr = (PVOID)pThunkData->u1.Function;
+							//PVOID func_addr = (PVOID)pThunkData->u1.Function;
 							if (pImport != NULL
 								&& pImport->Name != NULL
 								&& !IsBadReadPtr(pImport->Name, sizeof(const char*))
@@ -428,9 +427,12 @@ bool IATPatch(HMODULE hModule, const std::string& szDll, const std::string& func
 
 			pTable++;
 		}
+		
+#ifdef _MSC_VER
 	} __except (AccessViolationHandler(GetExceptionCode(), GetExceptionInformation())){
 		std::cout << " IAT FIND NAME BAD READ" << std::endl;
 	}
+#endif
 
 	return patchDone;
 }
@@ -487,7 +489,6 @@ void IATTrace(HMODULE hModule, std::unordered_map<std::string, bool>& map, bool 
 
 	
 	IMAGE_IMPORT_DESCRIPTOR* pTable = IATGetImportDescriptor(hModule);
-	PVOID startAddress = NULL;
 
 	if (pTable == NULL)
 	{
@@ -507,7 +508,7 @@ void IATTrace(HMODULE hModule, std::unordered_map<std::string, bool>& map, bool 
 			while (pThunkOriData != NULL && pThunkData != NULL && pThunkOriData->u1.AddressOfData != 0 && pThunkData->u1.AddressOfData != 0)
 			{
 					
-				PVOID func_addr = (PVOID)pThunkData->u1.Function;
+				//PVOID func_addr = (PVOID)pThunkData->u1.Function;
 				if (pThunkOriData->u1.Ordinal & IMAGE_ORDINAL_FLAG || pThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG)
 				{
 					std::string currentFuncName(ConstructOrdinalFunction(pThunkOriData));
@@ -546,8 +547,7 @@ const char* IATFindName(HMODULE hModule, PVOID func) {
     IMAGE_IMPORT_DESCRIPTOR* pTable = IATGetImportDescriptor(hModule);
     PVOID startAddress = NULL;
 
-	if (pTable == NULL)
-	{
+	if (pTable == NULL) {
 		std::stringstream ss;
 		ss << "Unable to read current module at " << hModule << std::endl;
 		throw std::range_error(ss.str());
@@ -598,15 +598,16 @@ const char* IATFindName(HMODULE hModule, PVOID func) {
 /// <param name="szDll">The dll name</param>
 /// <param name="szFunction">The function name</param>
 /// <returns>A pointer that leads to the address of the function</returns>
-void** IATGetFirstImport(HMODULE hModule, const char* szDll, const char* szFunction)
-{
+void** IATGetFirstImport(HMODULE hModule, const char* szDll, const char* szFunction) {
     const char* szDllName = NULL;
 	IMAGE_IMPORT_DESCRIPTOR* pTable = IATGetImportDescriptor(hModule);
     if(pTable == NULL) {
         return NULL;
     }
 
+#ifdef _MSC_VER
 	__try {
+#endif
 		while (pTable->Characteristics != 0 && (szDllName = IATGetImportTableName(hModule, pTable)) != NULL)
 		{
 			//Compare la dll cherchÃ©e et le module rÃ©cupÃ©rÃ©
@@ -654,9 +655,11 @@ void** IATGetFirstImport(HMODULE hModule, const char* szDll, const char* szFunct
 			pTable++;
 		}
 
+#ifdef _MSC_VER
 	} __except (AccessViolationHandler(GetExceptionCode(), GetExceptionInformation())){
 		std::cout << " IAT FIND NAME BAD READ " << std::endl;
 	}
+#endif
 
     return NULL;
 }
@@ -703,9 +706,9 @@ void PrintStackTraceIAT() {
     for (int i = 0; i < count; i++) {
 		try {
 			const char* funcName = IATFindName(GetModuleHandle(0), stack[i]);
-			printf("*** %d called from %s (%016I64LX)\n", i, funcName, stack[i]);
+			printf("*** %d called from %s (%p)\n", i, funcName, stack[i]);
 		} catch (std::invalid_argument& iae) {
-			printf("*** %d called from UNKNOWN (%016I64LX)\n", i, stack[i]);
+			printf("*** %d called from UNKNOWN (%p)\n", i, stack[i]);
 		}
 	
     }
@@ -826,7 +829,7 @@ void IATDumpProcess(ostream& dumpOutput, const std::string& modules) {
 
 
 			if (GetModuleFileNameA(hMods[i], szModName, sizeof(szModName) / sizeof(char))) {
-				std::string &strShortModName = GetShortName(szModName);
+				auto strShortModName = GetShortName(szModName);
 				dumpOutput << hMods[i] << "\t" << strShortModName.c_str() << std::endl;
 
 				bool isModuleOK = false;
@@ -871,8 +874,10 @@ void IATDump(HMODULE hModule, ostream& dumpOutput)
         dumpOutput << "Erreur : Impossible de lire le module courant\n";
         return;
     }
-
+    
+#ifdef _MSC_VER
 	__try {
+#endif
 		while (pTable != NULL && pTable->Characteristics != 0 && (szDllName = IATGetImportTableName(hModule, pTable)) != NULL && szDllName[0] != '\0')
 		{
 			if (dumpOutput) {
@@ -915,12 +920,13 @@ void IATDump(HMODULE hModule, ostream& dumpOutput)
 
 			pTable++;
 		}
-	}
-	__except (AccessViolationHandler(GetExceptionCode(), GetExceptionInformation())){
+#ifdef _MSC_VER
+	}__except (AccessViolationHandler(GetExceptionCode(), GetExceptionInformation())){
 		if (dumpOutput) {
 			dumpOutput << "\t\tBAD READ " << std::endl;
 		}
 	}
+#endif
 
 }
 

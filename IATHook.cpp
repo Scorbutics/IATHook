@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <string>
 #include <sstream>
+#include <system_error>
 #include <exception>
 
 #define IATHOOK_LIBRARY
@@ -122,9 +123,9 @@ IATHook::IATHook(const IATHook& h) {
 void IATHook::patch(PVOID keyAddress) {
 	m_keyAddress = keyAddress;
 	DWORDPTR key = (DWORDPTR)keyAddress;
-	hooksMap[key] = *this;
-	hooksNamedMap[m_funcName] = &hooksMap[key];
-	HookIATPatch(&hooksMap[key].wrapped);
+	hooksMap.emplace(key, *this);
+	hooksNamedMap.emplace(m_funcName, &hooksMap.at(key));
+	HookIATPatch(&hooksMap.at(key).wrapped);
 }
 
 /// <summary>
@@ -135,7 +136,7 @@ void IATHook::patch(PVOID keyAddress) {
 IATHook* IATHook::getHookFromAddress(PVOID keyAddress) {
 	DWORDPTR key = (DWORDPTR)keyAddress;
     if(hooksMap.find(key) != hooksMap.end()) {
-        return &hooksMap[key];
+        return &hooksMap.at(key);
     }
 
     return NULL;
@@ -189,8 +190,8 @@ std::string& IATHook::getIndicativeModuleName() {
 /// Unpatches this hook
 /// </summary>
 void IATHook::unpatch() {
-	auto& it = hooksMap.find((DWORDPTR)m_keyAddress);
-	auto& itName = hooksNamedMap.find(m_funcName);
+	auto it = hooksMap.find((DWORDPTR)m_keyAddress);
+	auto itName = hooksNamedMap.find(m_funcName);
 	HookIATUnpatch(&it->second.wrapped);
 	hooksMap.erase(it);
 	hooksNamedMap.erase(itName);

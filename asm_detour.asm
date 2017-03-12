@@ -1,11 +1,5 @@
 
-extern printf : proc
 extern LIBHOOKGeneralHookFunc : proc
-
-; REMEMBER :
-; don't use passed variable names!
-; MASM doesn't support this for x64
-
 
 .data
 lastHookAddress dq 0

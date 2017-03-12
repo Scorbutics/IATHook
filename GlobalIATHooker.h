@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 #include <Windows.h>
 #include "iathook_global.h"
 
@@ -11,8 +12,7 @@ public:
 	virtual void callback(PVOID originalFunc, std::vector<PVOID> registerArgs, PVOID stackPtr) = 0;
 };
 
-class IATHooker
-{
+class IATHooker {
 private:
 	IATHooker(PVOID function, HookCallback* callback);
 	
