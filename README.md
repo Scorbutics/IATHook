@@ -1,6 +1,6 @@
 Example of utilisation of IATHook (here is a program as a "ptrace" but on Windows) :
 
-
+```cpp
 	#include <Windows.h>
 	#include <iostream>
 	#include <sstream>
@@ -169,3 +169,4 @@ Example of utilisation of IATHook (here is a program as a "ptrace" but on Window
 		}
 		return TRUE;
 	}
+```
