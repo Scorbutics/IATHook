@@ -1,5 +1,4 @@
-#ifndef IATHOOK_H
-#define IATHOOK_H
+#pragma once
 
 #include <windows.h>
 #include <iostream>
@@ -11,43 +10,35 @@ struct HookIAT {
     void* hookFunction, *originalFunctionCaller;
     char name[256];
 };
-typedef struct HookIAT HookIAT;
 
-void HookIATPatch(HookIAT* hook);
-void HookIATUnpatch(HookIAT* hook);
-HookIAT HookIATCreate(HMODULE hModProcess, const char* moduleName, const char* funcName, void* hookFunc);
-
-
-class IATHOOKSHARED_EXPORT IATHook {
+class IATHook {
 
 public:
-     ~IATHook();
-	
-	IATHook(const IATHook& h);
-    IATHook(HMODULE hModProcess, const std::string& moduleName, const std::string& funcName, const std::string& indicativeModuleName, void* hookFunc);
-    
-	std::string& getIndicativeModuleName();
-	std::string& getFunctionName();
-	std::string& getModuleName();
-	PVOID getOriginalFunction();
+     ~IATHook() = default;
 
+	IATHook(const IATHook& h) = default;
+    IATHook(HMODULE hModProcess, std::string moduleName, std::string functionName, std::string indicativeModuleName, void* hookFunc);
+    
+	const std::string& getIndicativeModuleName() const;
+	const std::string& getFunctionName() const;
+	const std::string& getModuleName() const;
+	PVOID getOriginalFunction();
 	
 	void patch(PVOID keyAddress);
     void unpatch();
-	static IATHook* getHookFromAddress(PVOID address);
-	static IATHook* getHookFromName(const std::string& funcName);
+
+	static IATHOOKSHARED_EXPORT IATHook* getHookFromAddress(PVOID address);
+	static IATHOOKSHARED_EXPORT IATHook* getHookFromName(const std::string& funcName);
 
 private:
-	IATHook();
+	IATHook() = default;
     
-    HookIAT wrapped;
 	PVOID m_keyAddress;
     std::string m_moduleName;
 	std::string m_indicativeModuleName;
-    std::string m_funcName;
+    std::string m_functionName;
+	HookIAT m_wrapped;
+
     static std::unordered_map<DWORDPTR, IATHook> hooksMap;
 	static std::unordered_map<std::string, IATHook*> hooksNamedMap;
 };
-
-
-#endif // IATHOOK_H

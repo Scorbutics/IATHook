@@ -15,15 +15,12 @@
 std::unordered_map<DWORDPTR, IATHook> IATHook::hooksMap;
 std::unordered_map<std::string, IATHook*> IATHook::hooksNamedMap;
 
-using namespace std;
-
 /// <summary>
 /// Patches the IAT from the provided hook
 /// throws std::system_error, std::invalid_argument
 /// </summary>
 /// <param name="hook">The hook.</param>
-void HookIATPatch(HookIAT* hook)
-{
+void HookIATPatch(HookIAT* hook) {
     if(hook->originalFunction != NULL && hook->hookFunction != NULL && (*(hook->originalFunction)) != NULL) {
         DWORD oldProt;
         if(VirtualProtect(hook->originalFunction, sizeof(LPDWORD), PAGE_EXECUTE_READWRITE, &oldProt)) {
@@ -43,8 +40,7 @@ void HookIATPatch(HookIAT* hook)
 /// Unpatches the IAT from the provided hook
 /// </summary>
 /// <param name="hook">The hook.</param>
-void HookIATUnpatch(HookIAT* hook)
-{
+void HookIATUnpatch(HookIAT* hook) {
     //le but est de restaurer l'IAT
     void* lastHook = hook->hookFunction;
 
@@ -79,41 +75,19 @@ HookIAT HookIATCreate(HMODULE hModProcess, const char* moduleName, const char* f
     return result;
 }
 
-
-/// <summary>
-/// Initializes a new instance of the <see cref="IATHook"/> class.
-/// </summary>
-IATHook::IATHook() {
-
-}
-
 /// <summary>
 /// Initializes a new instance of the <see cref="IATHook"/> class.
 /// </summary>
 /// <param name="hModProcess">The process handle module.</param>
 /// <param name="moduleName">Name of the module where the function to hook is.</param>
-/// <param name="funcName">Name of the function to hook.</param>
+/// <param name="functionName">Name of the function to hook.</param>
 /// <param name="indicativeModuleName">Human readable name of the module</param>
 /// <param name="hookFunc">The hook function.</param>
-IATHook::IATHook(HMODULE hModProcess, const std::string& moduleName, const std::string& funcName, const std::string& indicativeModuleName, void* hookFunc) {
-	
-    wrapped = HookIATCreate(hModProcess, moduleName.empty() ? NULL : moduleName.c_str(), funcName.c_str(), hookFunc);
-    m_funcName = funcName;
-    m_moduleName = moduleName;
-	m_indicativeModuleName = indicativeModuleName;
-	m_keyAddress = NULL;
-}
-
-/// <summary>
-/// Initializes a new instance of the <see cref="IATHook"/> class.
-/// </summary>
-/// <param name="h">The h.</param>
-IATHook::IATHook(const IATHook& h) {
-	wrapped = h.wrapped;
-	m_funcName = h.m_funcName;
-	m_moduleName = h.m_moduleName;
-	m_indicativeModuleName = h.m_indicativeModuleName;
-	m_keyAddress = h.m_keyAddress;
+IATHook::IATHook(HMODULE hModProcess, std::string moduleName, std::string functionName, std::string indicativeModuleName, void* hookFunc) :
+	m_functionName(std::move(functionName)),
+	m_moduleName(std::move(moduleName)),
+	m_indicativeModuleName(std::move(indicativeModuleName)),
+	m_wrapped(HookIATCreate(hModProcess, m_moduleName.empty() ? NULL : m_moduleName.c_str(), m_functionName.c_str(), hookFunc)){
 }
 
 /// <summary>
@@ -124,8 +98,8 @@ void IATHook::patch(PVOID keyAddress) {
 	m_keyAddress = keyAddress;
 	DWORDPTR key = (DWORDPTR)keyAddress;
 	hooksMap.emplace(key, *this);
-	hooksNamedMap.emplace(m_funcName, &hooksMap.at(key));
-	HookIATPatch(&hooksMap.at(key).wrapped);
+	hooksNamedMap.emplace(m_functionName, &hooksMap.at(key));
+	HookIATPatch(&hooksMap.at(key).m_wrapped);
 }
 
 /// <summary>
@@ -159,22 +133,22 @@ IATHook* IATHook::getHookFromName(const std::string& hookName) {
 /// </summary>
 /// <returns>The address of the function</returns>
 PVOID IATHook::getOriginalFunction() {
-	return wrapped.originalFunctionCaller;
+	return m_wrapped.originalFunctionCaller;
 }
 
 /// <summary>
 /// Gets the name of the function.
 /// </summary>
 /// <returns>The name of the function</returns>
-std::string& IATHook::getFunctionName() {
-	return m_funcName;
+const std::string& IATHook::getFunctionName() const {
+	return m_functionName;
 }
 
 /// <summary>
 /// Gets the name of the module.
 /// </summary>
 /// <returns>The name of the module</returns>
-std::string& IATHook::getModuleName() {
+const std::string& IATHook::getModuleName() const {
 	return m_moduleName;
 }
 
@@ -182,7 +156,7 @@ std::string& IATHook::getModuleName() {
 /// Gets the indicative (human readable) name of the module.
 /// </summary>
 /// <returns>The indicative (human readable) name of the module.</returns>
-std::string& IATHook::getIndicativeModuleName() {
+const std::string& IATHook::getIndicativeModuleName() const {
 	return m_indicativeModuleName;
 }
 
@@ -191,14 +165,8 @@ std::string& IATHook::getIndicativeModuleName() {
 /// </summary>
 void IATHook::unpatch() {
 	auto it = hooksMap.find((DWORDPTR)m_keyAddress);
-	auto itName = hooksNamedMap.find(m_funcName);
-	HookIATUnpatch(&it->second.wrapped);
+	auto itName = hooksNamedMap.find(m_functionName);
+	HookIATUnpatch(&it->second.m_wrapped);
 	hooksMap.erase(it);
 	hooksNamedMap.erase(itName);
-}
-
-/// <summary>
-/// Finalizes an instance of the <see cref="IATHook"/> class.
-/// </summary>
-IATHook::~IATHook() {
 }

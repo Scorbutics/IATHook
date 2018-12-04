@@ -8,72 +8,74 @@
 #include "ASMUtils.h"
 #include "IATHook.h"
 
-//PVOID lIBHOOKlastOriginalFunc;
 std::unordered_map<PVOID, HookCallback*> IATHooker::hookCallbacks;
 std::unordered_map<PVOID, std::shared_ptr<IATHooker>> IATHooker::hookers;
 
+extern "C" {
+#ifdef _MSC_VER
+	#ifdef _WIN64
+		PVOID GetRSPx64(void);
+		PVOID GetRCXx64(void);
+		PVOID GetRDXx64(void);
+		PVOID GetR8x64(void);
+		PVOID GetR9x64(void);
+	#else
+		PVOID GetESP(void);
+	#endif
 
-#ifdef MSVC_VER
-extern "C" PVOID GetRSPx64(void);
-extern "C" PVOID GetRCXx64(void);
-extern "C" PVOID GetRDXx64(void);
-extern "C" PVOID GetR8x64(void);
-extern "C" PVOID GetR9x64(void);
 #else
-extern "C" PVOID GetRSPx64(void) {
-	PVOID result = 0;
-	__asm__(
-	"MOVQ %%RSP, %0"
-	: "=&R"(result)
-	::);
-	return result;
-}
+	PVOID GetRSPx64(void) {
+		PVOID result = 0;
+		__asm__(
+			"MOVQ %%RSP, %0"
+			: "=&R"(result)
+			::);
+		return result;
+	}
 
-extern "C" PVOID GetRCXx64(void) {
-	PVOID result = 0;
-	__asm__(
-	"MOVQ %%RCX, %0"
-	: "=&R"(result)
-	::);
-	return result;
-}
+	PVOID GetRCXx64(void) {
+		PVOID result = 0;
+		__asm__(
+			"MOVQ %%RCX, %0"
+			: "=&R"(result)
+			::);
+		return result;
+	}
 
-extern "C" PVOID GetRDXx64(void) {
-	PVOID result = 0;
-	__asm__(
-	"MOVQ %%RDX, %0"
-	: "=&R"(result)
-	::);
-	return result;
-}
+	PVOID GetRDXx64(void) {
+		PVOID result = 0;
+		__asm__(
+			"MOVQ %%RDX, %0"
+			: "=&R"(result)
+			::);
+		return result;
+	}
 
-extern "C" PVOID GetR8x64(void) {
-	PVOID result = 0;
-	__asm__(
-	"MOVQ %%R8, %0"
-	: "=&R"(result)
-	::);
-	return result;
-}
+	PVOID GetR8x64(void) {
+		PVOID result = 0;
+		__asm__(
+			"MOVQ %%R8, %0"
+			: "=&R"(result)
+			::);
+		return result;
+	}
 
-extern "C" PVOID GetR9x64(void) {
-	PVOID result = 0;
-	__asm__(
-	"MOVQ %%R9, %0"
-	: "=&R"(result)
-	::);
-	return result;
-}
+	PVOID GetR9x64(void) {
+		PVOID result = 0;
+		__asm__(
+			"MOVQ %%R9, %0"
+			: "=&R"(result)
+			::);
+		return result;
+	}
 #endif
-
-
+}
 
 /// <summary>
 /// Hooks the original function
 /// </summary>
 /// <param name="originalFunc">The original (unhooked) function.</param>
-extern "C" void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
-	//HookFunctionBefore(originalFunc);
+void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
 
 	HookCallback * h = IATHooker::getCallback(originalFunc); 
 	if (h != NULL) {
@@ -89,106 +91,63 @@ extern "C" void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
 		registerArgs.push_back(r8);
 		registerArgs.push_back(r9);
 #else
+		/* cdecl : arguments on the stack */
+		auto registerArgs = std::vector<PVOID> {};
 #endif
-		h->callback(originalFunc, registerArgs, GetRSPx64());
+		h->callback(originalFunc, registerArgs, GetESP());
 	}
 }
-
-#ifdef MSVC_VER
-/* Defined in the ASM linked file */
-extern "C" PVOID LIBHOOKDetourFunctionx64(void);
-/* end define */
+extern "C" {
+#ifdef _MSC_VER
+	/* Defined in the ASM linked file */
+	PVOID LIBHOOKDetourFunctionASM(DWORD ptr);
+	/* end define */
 #else
-extern "C" PVOID LIBHOOKDetourFunctionx64(void) {
-	
-	__asm__(
-	/* Allocate stack space */
-		"SUBQ $0x80, %%RSP\n"
-		
-	/* Prologue */
-		/* Freeze registers */
-		"PUSHQ %%RDI\n"
-		"PUSHQ %%RAX\n"
-		"PUSHQ %%RDX\n"
-		"PUSHQ %%RCX\n"
-		"PUSHQ %%R8\n"
-		"PUSHQ %%R9\n"
-		
-	/* Call hook function (input) with prototype : void hook(PVOID originalFunc) */
-		"CALLQ *%0\n"
+	PVOID LIBHOOKDetourFunctionASM(void) {
 
-	/* Epilogue */
-		/* Restore registers*/
-		"POPQ %%R9\n"
-		"POPQ %%R8\n"
-		"POPQ %%RCX\n"
-		"POPQ %%RDX\n"
-		"POPQ %%RAX\n"
-		"POPQ %%RDI\n"
-		
-		/* Free stack space */
-		"ADDQ $0x80, %%RSP\n"
-	
-		/* Extra POP : comes from the way we call this function (LIBHOOKDetourFunctionx64) : the first QWORD on stack is the original function address */
-		"POPQ %%RAX\n"
-	
-	/* Original function called (input) with a JMP (we cannot do it in C, it would be a CALL or JMP + RET) */
-		"JMPQ *%%RAX\n"
-		: 
-/* output operands */
+		__asm__(
+			/* Allocate stack space */
+			"SUBQ $0x80, %%RSP\n"
+
+			/* Prologue */
+				/* Freeze registers */
+			"PUSHQ %%RDI\n"
+			"PUSHQ %%RAX\n"
+			"PUSHQ %%RDX\n"
+			"PUSHQ %%RCX\n"
+			"PUSHQ %%R8\n"
+			"PUSHQ %%R9\n"
+
+			/* Call hook function (input) with prototype : void hook(PVOID originalFunc) */
+			"CALLQ *%0\n"
+
+			/* Epilogue */
+				/* Restore registers*/
+			"POPQ %%R9\n"
+			"POPQ %%R8\n"
+			"POPQ %%RCX\n"
+			"POPQ %%RDX\n"
+			"POPQ %%RAX\n"
+			"POPQ %%RDI\n"
+
+			/* Free stack space */
+			"ADDQ $0x80, %%RSP\n"
+
+			/* Extra POP : comes from the way we call this function (LIBHOOKDetourFunctionx64) : the first QWORD on stack is the original function address */
+			"POPQ %%RAX\n"
+
+			/* Original function called (input) with a JMP (we cannot do it in C, it would be a CALL or JMP + RET) */
+			"JMPQ *%%RAX\n"
+			:
+		/* output operands */
 		:
-/* input operands */
-		"r" (reinterpret_cast<PVOID>(LIBHOOKGeneralHookFunc))
-		:);
+			/* input operands */
+			"r" (reinterpret_cast<PVOID>(LIBHOOKGeneralHookFunc))
+			: );
 
-}
+	}
 #endif
-
-
-/*void TryDisplayAsString(PVOID p, const char* type) {
-	
-	std::cout << type << " : ";
-	printf("0x%p\t", p);
-	__try
-	{
-		printf("Native : %20llu\t", *((DWORDPTR*)p));
-		wprintf(L"Unicode : %s\t", (WCHAR*)p);
-		printf("ANSI : %s\n", (TCHAR*)p);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)			//Captures Access Violation
-	{
-		std::cout << std::endl;
-	}
-	
 }
-
-
-void HookFunctionBefore(PVOID originalFunc) {
-	IATHook* currentHook = IATHook::getHookFromAddress(originalFunc);
-	if (currentHook != NULL) {
-		std::cout << currentHook->getFunctionName().c_str() << std::endl;
-
-		DWORDPTR rsp = (DWORDPTR)GetRSPx64();
-		PVOID rcx = GetRCXx64();
-		PVOID rdx = GetRDXx64();
-		PVOID r8 = GetR8x64();
-		PVOID r9 = GetR9x64();
-
-		//TryDisplayAsString(rcx, "RCX");
-		//TryDisplayAsString(rdx, "RDX");
-		//TryDisplayAsString(r8, "R8 ");
-		//TryDisplayAsString(r9, "R9 ");
-
-		//std::cout << "Stack pointer : " << (PVOID)rsp;
-		std::cout << std::endl << std::endl;
-
-	}
-	else {
-		std::cout << lIBHOOKlastOriginalFunc << std::endl;
-	}
-}*/
-
-
 
 /// <summary>
 /// Sets the function to hook with the associated callback.
@@ -259,10 +218,8 @@ PVOID IATHooker::getTrampoline() {
 /// <returns>A dynamically allocated pointer that leads to the generated ASM code of the trampoline function</returns>
 PVOID IATHooker::generateTrampolineDetourFunction(PVOID originalFunc) {
 	
-	//TODO x86
-
-
-	/* This is a non conventional way to call LIBHOOKDetourFunctionx64 : first (and only) parameter is stored on the stack. 
+#ifdef _WIN64
+	/* This is a non conventional way to call LIBHOOKDetourFunctionASM : first (and only) parameter is stored on the stack. 
 	* So we'll have to manually query it in the function in assembly */
 	BYTE code[] = {
 		0x50,													//PUSH RAX
@@ -270,19 +227,26 @@ PVOID IATHooker::generateTrampolineDetourFunction(PVOID originalFunc) {
 		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE,			//
 		0x50,													//PUSH RAX
 
-		0x48, 0xB8,												//MOV RAX, LIBHOOKDetourFunctionx64
+		0x48, 0xB9,												//MOV RCX, LIBHOOKGeneralHookFunc
+		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE
+		0x48, 0xB8,												//MOV RAX, LIBHOOKDetourFunctionASM
 		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE,			//
 		0xFF, 0xE0												//JMP RAX
 	};
 
-#ifdef _WIN64
+
 	ASMUtils::reverseAddressx64((DWORD64)originalFunc, code + 3);
-	ASMUtils::reverseAddressx64((DWORD64)LIBHOOKDetourFunctionx64, code + 14);
+	ASMUtils::reverseAddressx64((DWORD64)LIBHOOKGeneralHookFunc, code + 14);
+	ASMUtils::reverseAddressx64((DWORD64)LIBHOOKDetourFunctionASM, code + 24);
 
 #else
-	ASMUtils::reverseAddressx86((DWORD)originalFunc, code + 3);
-	//TODO x86 version of LIBHOOKDetourFunction
-	ASMUtils::reverseAddressx86((DWORD)LIBHOOKDetourFunctionx64, code + 14);
+	BYTE code[] = {
+		0x00
+	};
+
+	//ASMUtils::reverseAddressx86((DWORD)originalFunc, code + 3);
+	//ASMUtils::reverseAddressx86((DWORD)LIBHOOKGeneralHookFunc, code + 14);
+	//ASMUtils::reverseAddressx86((DWORD)LIBHOOKDetourFunctionASM, code + 14);
 #endif
 
 	

@@ -374,9 +374,9 @@ bool IATPatch(HMODULE hModule, const std::string& szDll, const std::string& func
 	ordinalFunction = CheckOrdinalFunction(funcName, &szFunction);
 
 	if (pTable == NULL) {
-		std::stringstream ss;
-		ss << "Unable to read current module at " << std::hex << hModule;
-		throw std::range_error(ss.str());
+		char buffer[512] = { 0 };
+		sprintf_s(buffer, "Unable to read current module at 0x%p", hModule);
+		throw std::range_error(buffer);
 	}
 
 
