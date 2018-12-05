@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.9)
 project(iathook)
 
 set(CMAKE_CXX_STANDARD 17)
+SET (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SAFESEH:NO")
 
 add_subdirectory(external/asm_utils)
 add_subdirectory(src/architecture)
