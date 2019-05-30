@@ -75,7 +75,7 @@ extern "C" {
 /// Hooks the original function
 /// </summary>
 /// <param name="originalFunc">The original (unhooked) function.</param>
-void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
+extern "C" void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
 
 	HookCallback * h = IATHooker::getCallback(originalFunc); 
 	if (h != NULL) {
@@ -85,6 +85,8 @@ void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
 		PVOID rdx = GetRDXx64();
 		PVOID r8 = GetR8x64();
 		PVOID r9 = GetR9x64();
+		PVOID sp = GetRSPx64();
+
 		std::vector<PVOID> registerArgs;
 		registerArgs.push_back(rcx);
 		registerArgs.push_back(rdx);
@@ -93,8 +95,9 @@ void LIBHOOKGeneralHookFunc(PVOID originalFunc) {
 #else
 		/* cdecl : arguments on the stack */
 		auto registerArgs = std::vector<PVOID> {};
+		auto sp = GetESP();
 #endif
-		h->callback(originalFunc, registerArgs, GetESP());
+		h->callback(originalFunc, registerArgs, sp);
 	}
 }
 extern "C" {
@@ -228,7 +231,7 @@ PVOID IATHooker::generateTrampolineDetourFunction(PVOID originalFunc) {
 		0x50,													//PUSH RAX
 
 		0x48, 0xB9,												//MOV RCX, LIBHOOKGeneralHookFunc
-		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE
+		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE,
 		0x48, 0xB8,												//MOV RAX, LIBHOOKDetourFunctionASM
 		0xEF, 0xBE, 0xAD, 0xDE, 0xEF, 0xBE, 0xAD, 0xDE,			//
 		0xFF, 0xE0												//JMP RAX
@@ -240,13 +243,22 @@ PVOID IATHooker::generateTrampolineDetourFunction(PVOID originalFunc) {
 	ASMUtils::reverseAddressx64((DWORD64)LIBHOOKDetourFunctionASM, code + 24);
 
 #else
-	BYTE code[] = {
-		0x00
+	BYTE code[] = { 					   
+		  0x50, 						   //PUSH EAX
+		  0xB8, 						   //MOV EAX, originalFunc
+		  0xEF, 0xBE, 0xAD, 0xDE, 		   
+		  0x50,							   //PUSH EAX
+		  0xB8, 						   //MOV EAX, LIBHOOKGeneralHookFunc
+		  0xEF, 0xBE, 0xAD, 0xDE,
+		  0x50,							   //PUSH EAX
+		  0xB8, 						   //MOV EAX, LIBHOOKDetourFunctionASM
+		  0xEF, 0xBE, 0xAD, 0xDE, 		   
+		  0xFF, 0xE0 					   //JMP EAX
 	};
 
-	//ASMUtils::reverseAddressx86((DWORD)originalFunc, code + 3);
-	//ASMUtils::reverseAddressx86((DWORD)LIBHOOKGeneralHookFunc, code + 14);
-	//ASMUtils::reverseAddressx86((DWORD)LIBHOOKDetourFunctionASM, code + 14);
+	ASMUtils::reverseAddressx86((DWORD)originalFunc, code + 2);
+	ASMUtils::reverseAddressx86((DWORD)LIBHOOKGeneralHookFunc, code + 8);
+	ASMUtils::reverseAddressx86((DWORD)LIBHOOKDetourFunctionASM, code + 14);
 #endif
 
 	

@@ -7,6 +7,8 @@
 #include <Windows.h>
 #include "iathook_global.h"
 
+extern "C" void LIBHOOKGeneralHookFunc(PVOID originalFunc);
+
 class HookCallback {
 public:
 	virtual void callback(PVOID originalFunc, std::vector<PVOID> registerArgs, PVOID stackPtr) = 0;

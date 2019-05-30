@@ -22,4 +22,5 @@
 *.exe
 **/Makefile
 Makefile
-/.vs/iathook/v15
+.vs
+*/.vs

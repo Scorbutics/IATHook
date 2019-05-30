@@ -12,7 +12,7 @@ lastRSP dq 0
 
 .code
 
-	LIBHOOKDetourFunctionx64 proc
+	LIBHOOKDetourFunctionASM proc
 		POP RAX
 		
 
@@ -48,7 +48,7 @@ lastRSP dq 0
 
 		JMP lastHookAddress ;original function called
 
-	LIBHOOKDetourFunctionx64 endp
+	LIBHOOKDetourFunctionASM endp
 
 	GetRSPx64 proc
 		MOV RAX, lastRSP
